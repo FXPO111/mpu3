@@ -567,8 +567,9 @@ def _course_needs_rewrite(flags: dict[str, Any], cur_key: str, user_text: str) -
 
     policy = COURSE_FLAG_POLICY.get(cur_key)
     if not policy:
-        # дефолт: принимаем только если нет ключевых провалов по рубрике
-        return bool(flags.get("missing_timeline") or flags.get("missing_actions") or flags.get("blame_shift"))
+        # дефолт: для большинства вопросов таймлайн не обязателен;
+        # блокируем только при отсутствии конкретных действий или уходе от ответственности.
+        return bool(flags.get("missing_actions") or flags.get("blame_shift"))
 
     return any(bool(flags.get(k)) for k in policy)
 
@@ -599,6 +600,24 @@ def _course_yes(text: str, locale: str) -> bool:
     if (locale or "de").startswith("ru"):
         return t in {"да", "давай", "готов", "поехали", "начинаем"} or t.startswith("да ")
     return t in {"ja", "los", "start"} or t.startswith("ja ")
+
+
+def _course_start_intent(text: str, locale: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if (locale or "de").startswith("ru"):
+        return t in {
+            "начать",
+            "начать обучение",
+            "старт",
+            "поехали",
+            "давай начнем",
+            "давай начнём",
+            "/start",
+            "start",
+        }
+    return t in {"start", "/start", "los", "beginnen"}
 
 
 def _parse_day_of_30(boot_params: dict[str, str]) -> tuple[int, int]:
@@ -1410,9 +1429,31 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
         assistant_msg = repo.add_message(session_id, "assistant", text)
         return _publicize_ai_message(db, assistant_msg)
 
+    # Fail-safe для фронта: если курс ещё не инициализирован,
+    # первый пользовательский текст запускает интро курса вместо оценки "короткий ответ".
+    if m == "practice" and loc == "ru" and (not is_boot) and (not course):
+        start_s = _berlin_today().isoformat()
+        day_int = 1
+        day_of = 30
+
+        state, qs, plan = _prepare_alcohol_day_state(db, day_int=day_int, of=day_of, loc=loc, start_date=start_s)
+        diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
+        intro = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+
+        dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""}, ensure_ascii=False, separators=(",", ":"))
+        text = (
+                intro
+                + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
+                + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+                + "\n[[DOSSIER_UPDATE]]" + dossier_json
+        ).strip()
+
+        assistant_msg = repo.add_message(session_id, "assistant", text)
+        return _publicize_ai_message(db, assistant_msg)
+
     # Подтверждение старта: пользователь пишет "да" -> выдаём урок по вопросу 1
     if m == "practice" and loc == "ru" and course and course.get("phase") == "intro":
-        if loc == "ru" and _course_yes(content, loc):
+        if loc == "ru" and (_course_yes(content, loc) or _course_start_intent(content, loc)):
             keys = course.get("keys") or []
             i = int(course.get("i") or 0)
             q = OFFICIAL_ALCOHOL.get(keys[i]) if i < len(keys) else None
