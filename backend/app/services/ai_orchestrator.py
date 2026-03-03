@@ -620,6 +620,36 @@ def _course_start_intent(text: str, locale: str) -> bool:
     return t in {"start", "/start", "los", "beginnen"}
 
 
+<<<<<<< codex/fix-chat-functionality-issues-iiyh0x
+def _should_reuse_last_assistant_for_same_user_text(
+    *,
+    incoming_text: str,
+    last_user_text: str,
+    last_user_created_at: datetime,
+    last_assistant_created_at: datetime | None,
+    now_utc: datetime,
+) -> bool:
+    if (incoming_text or "").strip() != (last_user_text or "").strip():
+        return False
+
+    # Классический retry сразу после 50x/timeout.
+    age_s = (now_utc - last_user_created_at).total_seconds()
+    if 0 <= age_s < 4:
+        return True
+
+    # Доп. защита: если ассистент уже ответил на этот же последний user-mesage,
+    # а фронт повторно отправил тот же текст (двоеклик/ретрай), не плодим дубли.
+    if last_assistant_created_at is None:
+        return False
+    if last_assistant_created_at < last_user_created_at:
+        return False
+
+    # Окно ограничиваем, чтобы не блокировать осознанный повтор спустя долгое время.
+    return 0 <= age_s < 180
+
+
+=======
+>>>>>>> main
 def _parse_day_of_30(boot_params: dict[str, str]) -> tuple[int, int]:
     day_raw = (boot_params.get("day") or "").strip()
     if not day_raw:
@@ -1341,8 +1371,8 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
     if is_boot:
         for m_ in re.finditer(r"\b([a-zA-Z_]+)=([^\s]+)", content):
             boot_params[m_.group(1).strip().lower()] = m_.group(2).strip()
-    # Server-side dedup: frontend may retry the same POST on 502/timeout.
-    # If the last USER message is identical and very recent, return the latest assistant reply.
+    # Server-side dedup: фронт может ретраить один и тот же POST или отправить двойным кликом.
+    # Если это идентичный последнему user-тексту retry, возвращаем уже готовый ответ ассистента.
     if not is_boot:
         try:
             last_user = db.scalar(
@@ -1351,15 +1381,21 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
                 .order_by(AIMessage.created_at.desc())
                 .limit(1)
             )
-            if last_user and (last_user.content or "").strip() == content:
-                age_s = (datetime.now(timezone.utc) - last_user.created_at).total_seconds()
-                if age_s >= 0 and age_s < 4:
-                    last_assistant = db.scalar(
-                        select(AIMessage)
-                        .where(AIMessage.session_id == session_id, AIMessage.role == "assistant")
-                        .order_by(AIMessage.created_at.desc())
-                        .limit(1)
-                    )
+            if last_user:
+                last_assistant = db.scalar(
+                    select(AIMessage)
+                    .where(AIMessage.session_id == session_id, AIMessage.role == "assistant")
+                    .order_by(AIMessage.created_at.desc())
+                    .limit(1)
+                )
+
+                if _should_reuse_last_assistant_for_same_user_text(
+                    incoming_text=content,
+                    last_user_text=str(last_user.content or ""),
+                    last_user_created_at=last_user.created_at,
+                    last_assistant_created_at=(last_assistant.created_at if last_assistant else None),
+                    now_utc=datetime.now(timezone.utc),
+                ):
                     if last_assistant:
                         return _publicize_ai_message(db, last_assistant)
         except Exception:  # noqa: BLE001
