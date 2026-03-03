@@ -567,8 +567,9 @@ def _course_needs_rewrite(flags: dict[str, Any], cur_key: str, user_text: str) -
 
     policy = COURSE_FLAG_POLICY.get(cur_key)
     if not policy:
-        # дефолт: принимаем только если нет ключевых провалов по рубрике
-        return bool(flags.get("missing_timeline") or flags.get("missing_actions") or flags.get("blame_shift"))
+        # дефолт: для большинства вопросов таймлайн не обязателен;
+        # блокируем только при отсутствии конкретных действий или уходе от ответственности.
+        return bool(flags.get("missing_actions") or flags.get("blame_shift"))
 
     return any(bool(flags.get(k)) for k in policy)
 
@@ -599,6 +600,51 @@ def _course_yes(text: str, locale: str) -> bool:
     if (locale or "de").startswith("ru"):
         return t in {"да", "давай", "готов", "поехали", "начинаем"} or t.startswith("да ")
     return t in {"ja", "los", "start"} or t.startswith("ja ")
+
+
+def _course_start_intent(text: str, locale: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if (locale or "de").startswith("ru"):
+        return t in {
+            "начать",
+            "начать обучение",
+            "старт",
+            "поехали",
+            "давай начнем",
+            "давай начнём",
+            "/start",
+            "start",
+        }
+    return t in {"start", "/start", "los", "beginnen"}
+
+
+def _should_reuse_last_assistant_for_same_user_text(
+    *,
+    incoming_text: str,
+    last_user_text: str,
+    last_user_created_at: datetime,
+    last_assistant_created_at: datetime | None,
+    now_utc: datetime,
+) -> bool:
+    if (incoming_text or "").strip() != (last_user_text or "").strip():
+        return False
+
+    # Классический retry сразу после 50x/timeout.
+    age_s = (now_utc - last_user_created_at).total_seconds()
+    if 0 <= age_s < 4:
+        return True
+
+    # Доп. защита: если ассистент уже ответил на этот же последний user-mesage,
+    # а фронт повторно отправил тот же текст (двоеклик/ретрай), не плодим дубли.
+    if last_assistant_created_at is None:
+        return False
+    if last_assistant_created_at < last_user_created_at:
+        return False
+
+    # Окно ограничиваем, чтобы не блокировать осознанный повтор спустя долгое время.
+    return 0 <= age_s < 180
 
 
 def _parse_day_of_30(boot_params: dict[str, str]) -> tuple[int, int]:
@@ -1322,8 +1368,8 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
     if is_boot:
         for m_ in re.finditer(r"\b([a-zA-Z_]+)=([^\s]+)", content):
             boot_params[m_.group(1).strip().lower()] = m_.group(2).strip()
-    # Server-side dedup: frontend may retry the same POST on 502/timeout.
-    # If the last USER message is identical and very recent, return the latest assistant reply.
+    # Server-side dedup: фронт может ретраить один и тот же POST или отправить двойным кликом.
+    # Если это идентичный последнему user-тексту retry, возвращаем уже готовый ответ ассистента.
     if not is_boot:
         try:
             last_user = db.scalar(
@@ -1332,15 +1378,21 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
                 .order_by(AIMessage.created_at.desc())
                 .limit(1)
             )
-            if last_user and (last_user.content or "").strip() == content:
-                age_s = (datetime.now(timezone.utc) - last_user.created_at).total_seconds()
-                if age_s >= 0 and age_s < 4:
-                    last_assistant = db.scalar(
-                        select(AIMessage)
-                        .where(AIMessage.session_id == session_id, AIMessage.role == "assistant")
-                        .order_by(AIMessage.created_at.desc())
-                        .limit(1)
-                    )
+            if last_user:
+                last_assistant = db.scalar(
+                    select(AIMessage)
+                    .where(AIMessage.session_id == session_id, AIMessage.role == "assistant")
+                    .order_by(AIMessage.created_at.desc())
+                    .limit(1)
+                )
+
+                if _should_reuse_last_assistant_for_same_user_text(
+                    incoming_text=content,
+                    last_user_text=str(last_user.content or ""),
+                    last_user_created_at=last_user.created_at,
+                    last_assistant_created_at=(last_assistant.created_at if last_assistant else None),
+                    now_utc=datetime.now(timezone.utc),
+                ):
                     if last_assistant:
                         return _publicize_ai_message(db, last_assistant)
         except Exception:  # noqa: BLE001
@@ -1410,9 +1462,31 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
         assistant_msg = repo.add_message(session_id, "assistant", text)
         return _publicize_ai_message(db, assistant_msg)
 
+    # Fail-safe для фронта: если курс ещё не инициализирован,
+    # первый пользовательский текст запускает интро курса вместо оценки "короткий ответ".
+    if m == "practice" and loc == "ru" and (not is_boot) and (not course):
+        start_s = _berlin_today().isoformat()
+        day_int = 1
+        day_of = 30
+
+        state, qs, plan = _prepare_alcohol_day_state(db, day_int=day_int, of=day_of, loc=loc, start_date=start_s)
+        diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
+        intro = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+
+        dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""}, ensure_ascii=False, separators=(",", ":"))
+        text = (
+                intro
+                + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
+                + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+                + "\n[[DOSSIER_UPDATE]]" + dossier_json
+        ).strip()
+
+        assistant_msg = repo.add_message(session_id, "assistant", text)
+        return _publicize_ai_message(db, assistant_msg)
+
     # Подтверждение старта: пользователь пишет "да" -> выдаём урок по вопросу 1
     if m == "practice" and loc == "ru" and course and course.get("phase") == "intro":
-        if loc == "ru" and _course_yes(content, loc):
+        if loc == "ru" and (_course_yes(content, loc) or _course_start_intent(content, loc)):
             keys = course.get("keys") or []
             i = int(course.get("i") or 0)
             q = OFFICIAL_ALCOHOL.get(keys[i]) if i < len(keys) else None
