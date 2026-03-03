@@ -620,6 +620,7 @@ def _course_start_intent(text: str, locale: str) -> bool:
     return t in {"start", "/start", "los", "beginnen"}
 
 
+<<<<<<< codex/fix-chat-functionality-issues-iiyh0x
 def _should_reuse_last_assistant_for_same_user_text(
     *,
     incoming_text: str,
@@ -647,6 +648,8 @@ def _should_reuse_last_assistant_for_same_user_text(
     return 0 <= age_s < 180
 
 
+=======
+>>>>>>> main
 def _parse_day_of_30(boot_params: dict[str, str]) -> tuple[int, int]:
     day_raw = (boot_params.get("day") or "").strip()
     if not day_raw:

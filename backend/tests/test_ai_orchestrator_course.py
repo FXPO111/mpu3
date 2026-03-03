@@ -1,3 +1,4 @@
+
 from datetime import datetime, timedelta, timezone
 
 from app.services.ai_orchestrator import (
@@ -5,6 +6,8 @@ from app.services.ai_orchestrator import (
     _course_start_intent,
     _should_reuse_last_assistant_for_same_user_text,
 )
+
+
 
 
 def test_course_start_intent_ru_accepts_start_commands():
@@ -18,6 +21,7 @@ def test_course_default_rewrite_policy_does_not_require_timeline_for_every_quest
     text = "Я полностью отказался от вождения после алкоголя и ввёл нулевое правило: если есть даже теоретический алкоголь, я не еду за рулём. Я заранее планирую такси или ночёвку, а если мероприятие затягивается, оставляю машину дома, предупреждаю близких и фиксирую это правило в календаре как обязательное."
     flags = {"missing_timeline": True, "missing_actions": False, "blame_shift": False}
     assert _course_needs_rewrite(flags, "alc_avoid_future_dui", text) is False
+
 
 
 def test_dedup_reuses_assistant_on_immediate_retry():
@@ -55,3 +59,4 @@ def test_dedup_allows_same_text_after_window_expires():
         last_assistant_created_at=last_assistant_at,
         now_utc=now,
     ) is False
+
