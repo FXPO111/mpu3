@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: mpu-platform-backend
+Version: 0.1.0
+Summary: MPU platform API
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.116.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: sqlalchemy>=2.0.32
+Requires-Dist: psycopg[binary]>=3.2.1
+Requires-Dist: alembic>=1.13.2
+Requires-Dist: pydantic-settings>=2.4.0
+Requires-Dist: passlib[bcrypt]>=1.7.4
+Requires-Dist: pyjwt>=2.9.0
+Requires-Dist: slowapi>=0.1.9
+Requires-Dist: structlog>=24.4.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: pgvector>=0.3.5
+Requires-Dist: stripe>=10.8.0
+Requires-Dist: email-validator>=2.2.0
+Provides-Extra: test
+Requires-Dist: pytest>=8.3.2; extra == "test"
+Requires-Dist: pytest-cov>=5.0.0; extra == "test"
+Requires-Dist: pytest-asyncio>=0.23.8; extra == "test"
+Requires-Dist: faker>=28.1.0; extra == "test"
