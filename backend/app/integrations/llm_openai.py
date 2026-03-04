@@ -345,6 +345,16 @@ def _need_rewrite(mode: str, boot: bool, rubric_scores: dict | None, detected_is
             return True
     return False
 
+def _mpu_answer_standard_ru() -> str:
+    return (
+        "MPU-стандарт ответа (обязательные элементы):\n"
+        "1) Факты+таймлайн (когда/где/что именно произошло).\n"
+        "2) Личная ответственность без оправданий.\n"
+        "3) Понимание риска для безопасности на дороге.\n"
+        "4) Конкретные уже внедрённые изменения/барьеры.\n"
+        "5) Проверяемый план профилактики рецидива."
+    )
+
 def generate_free_question_reply(
     *,
     question_text: str,
@@ -367,12 +377,6 @@ def generate_free_question_reply(
         )
 
     # Scope gate: do NOT answer non-MPU questions and do not allow persuasion.
-    scope = _classify_mpu_scope(
-        question_text=q,
-        locale=loc,
-        diagnostic_summary=diagnostic_summary,
-        diagnostic_facts=diagnostic_facts,
-    )
     scope = _classify_mpu_scope(
         question_text=q,
         locale=loc,
@@ -428,6 +432,8 @@ def generate_free_question_reply(
 
     diag_ctx = _render_diagnostic_context(loc, diagnostic_summary, diagnostic_facts)
     tone_ru = _tone_guidance_ru(q)
+    standard_ru = _mpu_answer_standard_ru()
+
 
     if is_ru:
         system = (
@@ -443,6 +449,7 @@ def generate_free_question_reply(
             "Запрещено выдумывать факты о человеке (даты, города, промилле, терапию, анализы, справки и т.п.). "
             "Если деталей нет во входных данных — используй плейсхолдеры [ ].\n\n"
             "Пользователь задаёт произвольный вопрос, который может быть на интервью MPU. "
+            f"{standard_ru}\n\n"
             "Твоя задача — объяснить, КАК правильно отвечать, без встречных вопросов.\n\n"
             "Формат ответа:\n"
             "1) Что проверяют (1–2 предложения).\n"
@@ -637,6 +644,8 @@ def generate_assistant_reply(
 
     diag_ctx = _render_diagnostic_context(loc, diagnostic_summary, diagnostic_facts)
     tone_ru = _tone_guidance_ru(user_answer)
+    standard_ru = _mpu_answer_standard_ru()
+
     course_ctx = _safe_json(course_context) if course_context else ""
 
     hist_block = ""
@@ -672,6 +681,9 @@ def generate_assistant_reply(
                 f"{tone_ru}\n\n"
                 "Ты тренер подготовки к МПУ (MPU) в Германии. Отвечай только по-русски. "
                 "Не упоминай, что ты ИИ/бот/модель.\n\n"
+                f"{standard_ru}\n\n"
+                "Если FLAGS_JSON или RUBRIC_JSON показывают проблемы, нельзя писать, что ответ хороший/достаточный.\n"
+                "В таком случае прямо говори: 'Ответ пока не проходит стандарт MPU' и поясняй почему.\n\n"
                 "Источник фактов: DIAGNOSTIC_FACTS и USER_ANSWER. Любые другие факты запрещены.\n"
                 "ЗАПРЕТ: нельзя утверждать меры/изменения (алкотестер, психолог, терапия, тренинги, семья контролирует и т.д.), "
                 "если этого НЕТ в DIAGNOSTIC_FACTS или USER_ANSWER. Такие вещи можно давать только как ВАРИАНТЫ.\n"
@@ -694,6 +706,9 @@ def generate_assistant_reply(
                 f"{tone_ru}\n\n"
                 "Ты тренер подготовки к МПУ (MPU) в Германии. Отвечай только по-русски. "
                 "Не упоминай, что ты ИИ/бот/модель.\n\n"
+                f"{standard_ru}\n\n"
+                "Если FLAGS_JSON или RUBRIC_JSON показывают проблемы, нельзя писать, что ответ хороший/достаточный.\n"
+                "В таком случае прямо говори: 'Ответ пока не проходит стандарт MPU' и поясняй почему.\n\n"
                 "Источник фактов: DIAGNOSTIC_FACTS и USER_ANSWER. Любые другие факты запрещены.\n"
                 "ЗАПРЕТ: нельзя утверждать меры/изменения (алкотестер, психолог, тренинги, семья контролирует и т.д.), "
                 "если этого НЕТ в DIAGNOSTIC_FACTS или USER_ANSWER. Такие вещи можно давать только как ВАРИАНТЫ.\n"
