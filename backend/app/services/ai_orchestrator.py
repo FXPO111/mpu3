@@ -1701,6 +1701,7 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
             else:
                 human_text = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
 
+
             dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""},
                                       ensure_ascii=False, separators=(",", ":"))
             text = (
