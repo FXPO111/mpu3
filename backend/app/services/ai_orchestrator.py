@@ -597,9 +597,14 @@ def _course_yes(text: str, locale: str) -> bool:
     t = (text or "").strip().lower()
     if not t:
         return False
+    # tolerate punctuation/emojis from quick-action buttons and casual replies
+    t = re.sub(r"[^\w\sа-яё]", " ", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s+", " ", t).strip()
+    if not t:
+        return False
     if (locale or "de").startswith("ru"):
-        return t in {"да", "давай", "готов", "поехали", "начинаем"} or t.startswith("да ")
-    return t in {"ja", "los", "start"} or t.startswith("ja ")
+        return t in {"да", "давай", "готов", "поехали", "начинаем", "ок", "окей", "ага", "угу"} or t.startswith("да ")
+    return t in {"ja", "los", "start", "ok"} or t.startswith("ja ")
 
 
 def _course_start_intent(text: str, locale: str) -> bool:
@@ -1439,7 +1444,7 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
             assistant_msg = repo.add_message(session_id, "assistant", text)
             return _publicize_ai_message(db, assistant_msg)
 
-    # Старт курса (practice): показываем прелюдию, НЕ задаём вопрос
+    # Старт курса (practice): сразу открываем первый вопрос дня (без ручного "да").
     if m == "practice" and is_boot and loc == "ru":
         # День привязан к календарю Europe/Berlin. Пользователь не может перелистнуть.
         start_s = _berlin_today().isoformat()
@@ -1449,12 +1454,18 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
         state, qs, plan = _prepare_alcohol_day_state(db, day_int=day_int, of=day_of, loc=loc, start_date=start_s)
 
         diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
-        intro = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+        first_q = qs[0] if qs else None
+        if first_q:
+            state["phase"] = "q"
+            lesson = _render_lesson_ru(first_q, 1, len(qs), diagnostic_summary=diagnostic_summary)
+            human_text = f"День {day_int}/{day_of}. Начинаем.\n\n{lesson}".strip()
+        else:
+            human_text = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
 
         dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""},
                                   ensure_ascii=False, separators=(",", ":"))
         text = (
-                intro
+                human_text
                 + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[DOSSIER_UPDATE]]" + dossier_json
@@ -1464,7 +1475,7 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
         return _publicize_ai_message(db, assistant_msg)
 
     # Fail-safe для фронта: если курс ещё не инициализирован,
-    # первый пользовательский текст запускает интро курса вместо оценки "короткий ответ".
+    # первый пользовательский текст сразу запускает первый вопрос дня.
     if m == "practice" and loc == "ru" and (not is_boot) and (not course):
         start_s = _berlin_today().isoformat()
         day_int = 1
@@ -1472,11 +1483,17 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
 
         state, qs, plan = _prepare_alcohol_day_state(db, day_int=day_int, of=day_of, loc=loc, start_date=start_s)
         diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
-        intro = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+        first_q = qs[0] if qs else None
+        if first_q:
+            state["phase"] = "q"
+            lesson = _render_lesson_ru(first_q, 1, len(qs), diagnostic_summary=diagnostic_summary)
+            human_text = f"День {day_int}/{day_of}. Начинаем.\n\n{lesson}".strip()
+        else:
+            human_text = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
 
         dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""}, ensure_ascii=False, separators=(",", ":"))
         text = (
-                intro
+                human_text
                 + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[DOSSIER_UPDATE]]" + dossier_json
@@ -1667,11 +1684,40 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
 
     # --- COURSE: day already closed ---
     if (not is_boot) and m == "practice" and loc == "ru" and course and course.get("phase") == "done":
+        # UX: allow plain-text "Начать обучение" from UI to immediately open next day.
+        if _course_start_intent(content, loc):
+            day = int(course.get("day") or 1)
+            of = int(course.get("of") or 30)
+            start_s = str(course.get("start_date") or _berlin_today().isoformat())
+            next_day = min(max(1, day + 1), max(1, of))
+
+            state, qs, plan = _prepare_alcohol_day_state(db, day_int=next_day, of=of, loc=loc, start_date=start_s)
+            diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
+            first_q = qs[0] if qs else None
+            if first_q:
+                state["phase"] = "q"
+                lesson = _render_lesson_ru(first_q, 1, len(qs), diagnostic_summary=diagnostic_summary)
+                human_text = f"День {next_day}/{of}. Начинаем.\n\n{lesson}".strip()
+            else:
+                human_text = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+
+            dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""},
+                                      ensure_ascii=False, separators=(",", ":"))
+            text = (
+                    human_text
+                    + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
+                    + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+                    + "\n[[DOSSIER_UPDATE]]" + dossier_json
+            ).strip()
+
+            assistant_msg = repo.add_message(session_id, "assistant", text)
+            return _publicize_ai_message(db, assistant_msg)
+
         day = int(course.get("day") or 1)
         of = int(course.get("of") or 30)
         human_text = (
             f"День {day}/{of} уже закрыт.\n"
-            "Чтобы начать следующий день — нажми «Начать обучение» в кабинете (фронт должен отправить старт курса с day+1)."
+            "Чтобы начать следующий день — нажми «Начать обучение» в кабинете."
         ).strip()
 
         blocks = ["[[COURSE]]" + json.dumps(course, ensure_ascii=False, separators=(",", ":"))]
