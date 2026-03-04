@@ -231,6 +231,33 @@ def _normalize_locale(locale: str) -> str:
         return "ru"
     return "de"
 
+def _tone_guidance_ru(user_text: str) -> str:
+    """Return brief RU tone guidance so coach sounds human, not mechanical."""
+    text = (user_text or "").strip()
+    low = text.lower()
+    words = len([w for w in re.split(r"\s+", text) if w])
+
+    emotional_markers = (
+        "не понимаю",
+        "боюсь",
+        "трев",
+        "паник",
+        "стыд",
+        "страшно",
+        "запут",
+        "не получается",
+    )
+    if any(m in low for m in emotional_markers):
+        return (
+            "Тон: спокойный и поддерживающий. Сначала коротко валидируй состояние пользователя одной фразой, "
+            "затем переходи к конкретике."
+        )
+
+    if words <= 12:
+        return "Тон: простой разговорный. Короткие фразы без канцелярита, максимум одна мысль в предложении."
+
+    return "Тон: деловой, но живой. Пиши как личный тренер, избегай шаблонных и бюрократических формулировок."
+
 
 def _strip_machine_lines(s: str) -> str:
     out: list[str] = []
@@ -400,9 +427,11 @@ def generate_free_question_reply(
         q = translated.strip() if translated and translated.strip() else q
 
     diag_ctx = _render_diagnostic_context(loc, diagnostic_summary, diagnostic_facts)
+    tone_ru = _tone_guidance_ru(q)
 
     if is_ru:
         system = (
+            f"{tone_ru}\n\n"
             "Отвечай в позиции завершённых изменений.\n\n"
             "Нельзя формулировать в будущем времени: запрещены фразы 'я буду', 'я планирую', 'я собираюсь', 'я хочу изменить.\n\n"
             "Допустимы только формулировки уже внедрённых мер: 'я внедрил', 'у меня действует правило', 'я контролирую так', 'с тех пор я делаю.\n\n"
@@ -607,6 +636,7 @@ def generate_assistant_reply(
     policy = "REWRITE" if rewrite else "NEXT"
 
     diag_ctx = _render_diagnostic_context(loc, diagnostic_summary, diagnostic_facts)
+    tone_ru = _tone_guidance_ru(user_answer)
     course_ctx = _safe_json(course_context) if course_context else ""
 
     hist_block = ""
@@ -639,6 +669,7 @@ def generate_assistant_reply(
     if is_ru:
         if is_course:
             system = (
+                f"{tone_ru}\n\n"
                 "Ты тренер подготовки к МПУ (MPU) в Германии. Отвечай только по-русски. "
                 "Не упоминай, что ты ИИ/бот/модель.\n\n"
                 "Источник фактов: DIAGNOSTIC_FACTS и USER_ANSWER. Любые другие факты запрещены.\n"
@@ -660,6 +691,7 @@ def generate_assistant_reply(
             )
         else:
             system = (
+                f"{tone_ru}\n\n"
                 "Ты тренер подготовки к МПУ (MPU) в Германии. Отвечай только по-русски. "
                 "Не упоминай, что ты ИИ/бот/модель.\n\n"
                 "Источник фактов: DIAGNOSTIC_FACTS и USER_ANSWER. Любые другие факты запрещены.\n"
