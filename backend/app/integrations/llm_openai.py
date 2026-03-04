@@ -61,6 +61,7 @@ def _openai_client():
     from openai import OpenAI  # type: ignore
     return OpenAI(api_key=settings.openai_api_key, timeout=_OPENAI_TIMEOUT_S, max_retries=_OPENAI_MAX_RETRIES)
 
+
 # Разрешаем служебные аббревиатуры (они не "английский язык" по смыслу продукта)
 _ALLOWED_LATIN_TOKENS = {"MPU", "MDMA", "THC", "ETG", "CDT"}
 
@@ -139,6 +140,7 @@ def translate_question_to_ru(question: str) -> str:
 def _has_openai() -> bool:
     return bool(getattr(settings, "openai_api_key", None))
 
+
 def _classify_mpu_scope(
     *,
     question_text: str,
@@ -177,7 +179,9 @@ def _classify_mpu_scope(
     )
 
     user = f"QUESTION:\n{q}\n\nCONTEXT:\n{diag_ctx}\n"
-    model = (os.getenv("OPENAI_MODEL_CLASSIFIER") or "").strip() or (getattr(settings, "openai_model", None) or DEFAULT_MODEL)
+    model = (os.getenv("OPENAI_MODEL_CLASSIFIER") or "").strip() or (
+        getattr(settings, "openai_model", None) or DEFAULT_MODEL
+    )
 
     try:
         from openai import OpenAI  # type: ignore
@@ -197,6 +201,7 @@ def _classify_mpu_scope(
         return "UNCLEAR"
 
     return "UNCLEAR"
+
 
 def _fallback(*, mode: str, question: str, locale: str) -> str:
     loc = (locale or "de").strip().lower()
@@ -230,6 +235,7 @@ def _normalize_locale(locale: str) -> str:
     if loc.startswith("ru"):
         return "ru"
     return "de"
+
 
 def _tone_guidance_ru(user_text: str) -> str:
     """Return brief RU tone guidance so coach sounds human, not mechanical."""
@@ -346,6 +352,17 @@ def _need_rewrite(mode: str, boot: bool, rubric_scores: dict | None, detected_is
     return False
 
 
+def _mpu_answer_standard_ru() -> str:
+    return (
+        "MPU-стандарт ответа (обязательные элементы):\n"
+        "1) Факты+таймлайн (когда/где/что именно произошло).\n"
+        "2) Личная ответственность без оправданий.\n"
+        "3) Понимание риска для безопасности на дороге.\n"
+        "4) Конкретные уже внедрённые изменения/барьеры.\n"
+        "5) Проверяемый план профилактики рецидива."
+    )
+
+
 def _mpu_high_bar_rules_ru() -> str:
     return (
         "Требования к примеру ответа уровня MPU (анти-штамп):\n"
@@ -356,6 +373,7 @@ def _mpu_high_bar_rules_ru() -> str:
         "- Убери канцелярит и универсальные фразы вида 'я осознал, что это серьёзно', если они без фактов.\n"
         "- Не используй формы '(а)' и гендерные скобки; пиши естественным разговорным русским."
     )
+
 
 def generate_free_question_reply(
     *,
@@ -452,6 +470,7 @@ def generate_free_question_reply(
             "Если деталей нет во входных данных — используй плейсхолдеры [ ].\n\n"
             "Пользователь задаёт произвольный вопрос, который может быть на интервью MPU. "
             f"{standard_ru}\n\n"
+            f"{high_bar_ru}\n\n"
             "Твоя задача — объяснить, КАК правильно отвечать, без встречных вопросов.\n\n"
             "Формат ответа:\n"
             "1) Что проверяют (1–2 предложения).\n"
@@ -524,6 +543,7 @@ def generate_free_question_reply(
 
     return out.strip()
 
+
 def _safe_json(obj: Any) -> str:
     try:
         return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -584,8 +604,15 @@ def _sanitize_dossier_json_ru(obj: dict[str, Any], allowed_source: str) -> dict[
         out[k] = v
 
     # если источники не содержат промилле, а shortStory содержит — заменяем
-    if ("промилле" not in src and "‰" not in src and "bak" not in src) and ("промилле" in str(out.get("shortStory") or "").lower()):
-        out["shortStory"] = re.sub(r"\b\d+(?:[.,]\d+)?\b\s*(?:промилле|‰)", "[промилле]", str(out["shortStory"]), flags=re.IGNORECASE)
+    if ("промилле" not in src and "‰" not in src and "bak" not in src) and (
+        "промилле" in str(out.get("shortStory") or "").lower()
+    ):
+        out["shortStory"] = re.sub(
+            r"\b\d+(?:[.,]\d+)?\b\s*(?:промилле|‰)",
+            "[промилле]",
+            str(out["shortStory"]),
+            flags=re.IGNORECASE,
+        )
 
     return out
 
@@ -684,6 +711,7 @@ def generate_assistant_reply(
                 "Ты тренер подготовки к МПУ (MPU) в Германии. Отвечай только по-русски. "
                 "Не упоминай, что ты ИИ/бот/модель.\n\n"
                 f"{standard_ru}\n\n"
+                f"{high_bar_ru}\n\n"
                 "Если FLAGS_JSON или RUBRIC_JSON показывают проблемы, нельзя писать, что ответ хороший/достаточный.\n"
                 "В таком случае прямо говори: 'Ответ пока не проходит стандарт MPU' и поясняй почему.\n\n"
                 "Источник фактов: DIAGNOSTIC_FACTS и USER_ANSWER. Любые другие факты запрещены.\n"
@@ -709,6 +737,7 @@ def generate_assistant_reply(
                 "Ты тренер подготовки к МПУ (MPU) в Германии. Отвечай только по-русски. "
                 "Не упоминай, что ты ИИ/бот/модель.\n\n"
                 f"{standard_ru}\n\n"
+                f"{high_bar_ru}\n\n"
                 "Если FLAGS_JSON или RUBRIC_JSON показывают проблемы, нельзя писать, что ответ хороший/достаточный.\n"
                 "В таком случае прямо говори: 'Ответ пока не проходит стандарт MPU' и поясняй почему.\n\n"
                 "Источник фактов: DIAGNOSTIC_FACTS и USER_ANSWER. Любые другие факты запрещены.\n"
@@ -841,7 +870,15 @@ def generate_assistant_reply(
         if policy == "NEXT" and not re.search(r"(?i)\bпринято\b", human):
             human = (human.rstrip() + "\n\nОк. Принято.").strip()
 
-    allowed_source = (user_answer or "") + "\n" + (diagnostic_summary or "") + "\n" + _safe_json(diagnostic_facts or {}) + "\n" + _safe_json(course_context or {})
+    allowed_source = (
+        (user_answer or "")
+        + "\n"
+        + (diagnostic_summary or "")
+        + "\n"
+        + _safe_json(diagnostic_facts or {})
+        + "\n"
+        + _safe_json(course_context or {})
+    )
     if is_ru:
         human = _sanitize_template_section_ru(human, allowed_source)
 
@@ -864,6 +901,7 @@ def generate_assistant_reply(
     final = human.strip() + "\n" + marker + json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
     return final.strip()
 
+
 def _sanitize_course_example_ru(human: str, user_answer: str) -> str:
     if not human:
         return human
@@ -873,14 +911,23 @@ def _sanitize_course_example_ru(human: str, user_answer: str) -> str:
     has_said = bool(re.search(r"\b(сказал|сказала|говорил|говорила|говорили)\b", ua))
     if not has_said:
         human = re.sub(r"(?i)\bони\s+говорил[аи]?\s*(?:,)?\s*что\s+[^.]+", "Они говорили [что именно]", human)
-        human = re.sub(r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+говорил[аи]?\s*(?:,)?\s*что\s+[^.]+", r"\1 говорил(а) [что именно]", human)
-        human = re.sub(r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+сказал[аи]?\s*(?:,)?\s*что\s+[^.]+", r"\1 сказал(а) [что именно]", human)
+        human = re.sub(
+            r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+говорил[аи]?\s*(?:,)?\s*что\s+[^.]+",
+            r"\1 говорил(а) [что именно]",
+            human,
+        )
+        human = re.sub(
+            r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+сказал[аи]?\s*(?:,)?\s*что\s+[^.]+",
+            r"\1 сказал(а) [что именно]",
+            human,
+        )
 
     # убираем "например ..." если пользователь сам не использовал "например" (обычно это источник фантазий)
     if "например" not in ua:
         human = re.sub(r"(?i)\bнапример\b[^.]*\.", "", human)
 
     return human.strip()
+
 
 def _therapy_fallback(locale: str) -> str:
     loc = (locale or "de").strip().lower()
