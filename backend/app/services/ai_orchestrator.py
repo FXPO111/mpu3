@@ -1444,7 +1444,7 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
             assistant_msg = repo.add_message(session_id, "assistant", text)
             return _publicize_ai_message(db, assistant_msg)
 
-    # Старт курса (practice): показываем прелюдию, НЕ задаём вопрос
+    # Старт курса (practice): сразу открываем первый вопрос дня (без ручного "да").
     if m == "practice" and is_boot and loc == "ru":
         # День привязан к календарю Europe/Berlin. Пользователь не может перелистнуть.
         start_s = _berlin_today().isoformat()
@@ -1454,12 +1454,18 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
         state, qs, plan = _prepare_alcohol_day_state(db, day_int=day_int, of=day_of, loc=loc, start_date=start_s)
 
         diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
-        intro = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+        first_q = qs[0] if qs else None
+        if first_q:
+            state["phase"] = "q"
+            lesson = _render_lesson_ru(first_q, 1, len(qs), diagnostic_summary=diagnostic_summary)
+            human_text = f"День {day_int}/{day_of}. Начинаем.\n\n{lesson}".strip()
+        else:
+            human_text = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
 
         dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""},
                                   ensure_ascii=False, separators=(",", ":"))
         text = (
-                intro
+                human_text
                 + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[DOSSIER_UPDATE]]" + dossier_json
@@ -1469,7 +1475,7 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
         return _publicize_ai_message(db, assistant_msg)
 
     # Fail-safe для фронта: если курс ещё не инициализирован,
-    # первый пользовательский текст запускает интро курса вместо оценки "короткий ответ".
+    # первый пользовательский текст сразу запускает первый вопрос дня.
     if m == "practice" and loc == "ru" and (not is_boot) and (not course):
         start_s = _berlin_today().isoformat()
         day_int = 1
@@ -1477,11 +1483,17 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
 
         state, qs, plan = _prepare_alcohol_day_state(db, day_int=day_int, of=day_of, loc=loc, start_date=start_s)
         diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
-        intro = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+        first_q = qs[0] if qs else None
+        if first_q:
+            state["phase"] = "q"
+            lesson = _render_lesson_ru(first_q, 1, len(qs), diagnostic_summary=diagnostic_summary)
+            human_text = f"День {day_int}/{day_of}. Начинаем.\n\n{lesson}".strip()
+        else:
+            human_text = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
 
         dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""}, ensure_ascii=False, separators=(",", ":"))
         text = (
-                intro
+                human_text
                 + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
                 + "\n[[DOSSIER_UPDATE]]" + dossier_json
@@ -1681,12 +1693,19 @@ def process_user_message(db: Session, session_id: UUID, user_content: str, local
 
             state, qs, plan = _prepare_alcohol_day_state(db, day_int=next_day, of=of, loc=loc, start_date=start_s)
             diagnostic_summary = _build_diagnostic_summary(repo, sess.user_id, loc)
-            intro = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+            first_q = qs[0] if qs else None
+            if first_q:
+                state["phase"] = "q"
+                lesson = _render_lesson_ru(first_q, 1, len(qs), diagnostic_summary=diagnostic_summary)
+                human_text = f"День {next_day}/{of}. Начинаем.\n\n{lesson}".strip()
+            else:
+                human_text = _render_course_intro_ru(qs, diagnostic_summary=diagnostic_summary)
+
 
             dossier_json = json.dumps({"reason": "", "responsibility": "", "changes": "", "shortStory": "", "redZones": ""},
                                       ensure_ascii=False, separators=(",", ":"))
             text = (
-                    intro
+                    human_text
                     + "\n[[DAY_PLAN]]" + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
                     + "\n[[COURSE]]" + json.dumps(state, ensure_ascii=False, separators=(",", ":"))
                     + "\n[[DOSSIER_UPDATE]]" + dossier_json

@@ -59,7 +59,12 @@ _OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE") or "0.2")
 
 def _openai_client():
     from openai import OpenAI  # type: ignore
-    return OpenAI(api_key=settings.openai_api_key, timeout=_OPENAI_TIMEOUT_S, max_retries=_OPENAI_MAX_RETRIES)
+
+    return OpenAI(
+        api_key=settings.openai_api_key,
+        timeout=_OPENAI_TIMEOUT_S,
+        max_retries=_OPENAI_MAX_RETRIES,
+    )
 
 
 # Разрешаем служебные аббревиатуры (они не "английский язык" по смыслу продукта)
@@ -124,7 +129,10 @@ def translate_question_to_ru(question: str) -> str:
             out = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "Перепиши полностью по-русски. Верни только вопрос одной строкой."},
+                    {
+                        "role": "system",
+                        "content": "Перепиши полностью по-русски. Верни только вопрос одной строкой.",
+                    },
                     {"role": "user", "content": out},
                 ],
                 temperature=_OPENAI_TEMPERATURE,
@@ -235,33 +243,6 @@ def _normalize_locale(locale: str) -> str:
     if loc.startswith("ru"):
         return "ru"
     return "de"
-
-def _tone_guidance_ru(user_text: str) -> str:
-    """Return brief RU tone guidance so coach sounds human, not mechanical."""
-    text = (user_text or "").strip()
-    low = text.lower()
-    words = len([w for w in re.split(r"\s+", text) if w])
-
-    emotional_markers = (
-        "не понимаю",
-        "боюсь",
-        "трев",
-        "паник",
-        "стыд",
-        "страшно",
-        "запут",
-        "не получается",
-    )
-    if any(m in low for m in emotional_markers):
-        return (
-            "Тон: спокойный и поддерживающий. Сначала коротко валидируй состояние пользователя одной фразой, "
-            "затем переходи к конкретике."
-        )
-
-    if words <= 12:
-        return "Тон: простой разговорный. Короткие фразы без канцелярита, максимум одна мысль в предложении."
-
-    return "Тон: деловой, но живой. Пиши как личный тренер, избегай шаблонных и бюрократических формулировок."
 
 
 def _tone_guidance_ru(user_text: str) -> str:
@@ -377,6 +358,17 @@ def _need_rewrite(mode: str, boot: bool, rubric_scores: dict | None, detected_is
         if nums and min(nums) < 3:
             return True
     return False
+
+
+def _mpu_answer_standard_ru() -> str:
+    return (
+        "MPU-стандарт ответа (обязательные элементы):\n"
+        "1) Факты+таймлайн (когда/где/что именно произошло).\n"
+        "2) Личная ответственность без оправданий.\n"
+        "3) Понимание риска для безопасности на дороге.\n"
+        "4) Конкретные уже внедрённые изменения/барьеры.\n"
+        "5) Проверяемый план профилактики рецидива."
+    )
 
 
 def _mpu_high_bar_rules_ru() -> str:
@@ -548,7 +540,10 @@ def generate_free_question_reply(
             out = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "Перепиши полностью по-русски. Сохрани структуру и смысл. Не добавляй фактов."},
+                    {
+                        "role": "system",
+                        "content": "Перепиши полностью по-русски. Сохрани структуру и смысл. Не добавляй фактов.",
+                    },
                     {"role": "user", "content": out},
                 ],
                 temperature=0.2,
@@ -852,7 +847,10 @@ def generate_assistant_reply(
             out = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "Перепиши полностью по-русски. Немецкие/английские фразы запрещены. Сохрани структуру и смысл."},
+                    {
+                        "role": "system",
+                        "content": "Перепиши полностью по-русски. Немецкие/английские фразы запрещены. Сохрани структуру и смысл.",
+                    },
                     {"role": "user", "content": out},
                 ],
                 temperature=0.2,
@@ -927,16 +925,8 @@ def _sanitize_course_example_ru(human: str, user_answer: str) -> str:
     has_said = bool(re.search(r"\b(сказал|сказала|говорил|говорила|говорили)\b", ua))
     if not has_said:
         human = re.sub(r"(?i)\bони\s+говорил[аи]?\s*(?:,)?\s*что\s+[^.]+", "Они говорили [что именно]", human)
-        human = re.sub(
-            r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+говорил[аи]?\s*(?:,)?\s*что\s+[^.]+",
-            r"\1 говорил(а) [что именно]",
-            human,
-        )
-        human = re.sub(
-            r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+сказал[аи]?\s*(?:,)?\s*что\s+[^.]+",
-            r"\1 сказал(а) [что именно]",
-            human,
-        )
+        human = re.sub(r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+говорил[аи]?\s*(?:,)?\s*что\s+[^.]+", r"\1 говорил(а) [что именно]", human)
+        human = re.sub(r"(?i)\b(жена|реб[её]нок|муж|партн[её]р)\s+сказал[аи]?\s*(?:,)?\s*что\s+[^.]+", r"\1 сказал(а) [что именно]", human)
 
     # убираем "например ..." если пользователь сам не использовал "например" (обычно это источник фантазий)
     if "например" not in ua:
