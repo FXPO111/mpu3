@@ -368,7 +368,9 @@ class SessionCreateIn(BaseModel):
 
 
 class MessageIn(BaseModel):
-    content: str = Field(min_length=1)
+    # Empty payload is allowed at schema level because API routes may convert
+    # first-message empty posts into explicit boot commands ([[START_*]]).
+    content: str = ""
 
 
 class CheckoutIn(BaseModel):

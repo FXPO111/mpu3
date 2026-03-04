@@ -236,6 +236,33 @@ def _normalize_locale(locale: str) -> str:
         return "ru"
     return "de"
 
+def _tone_guidance_ru(user_text: str) -> str:
+    """Return brief RU tone guidance so coach sounds human, not mechanical."""
+    text = (user_text or "").strip()
+    low = text.lower()
+    words = len([w for w in re.split(r"\s+", text) if w])
+
+    emotional_markers = (
+        "не понимаю",
+        "боюсь",
+        "трев",
+        "паник",
+        "стыд",
+        "страшно",
+        "запут",
+        "не получается",
+    )
+    if any(m in low for m in emotional_markers):
+        return (
+            "Тон: спокойный и поддерживающий. Сначала коротко валидируй состояние пользователя одной фразой, "
+            "затем переходи к конкретике."
+        )
+
+    if words <= 12:
+        return "Тон: простой разговорный. Короткие фразы без канцелярита, максимум одна мысль в предложении."
+
+    return "Тон: деловой, но живой. Пиши как личный тренер, избегай шаблонных и бюрократических формулировок."
+
 
 def _tone_guidance_ru(user_text: str) -> str:
     """Return brief RU tone guidance so coach sounds human, not mechanical."""
@@ -350,17 +377,6 @@ def _need_rewrite(mode: str, boot: bool, rubric_scores: dict | None, detected_is
         if nums and min(nums) < 3:
             return True
     return False
-
-
-def _mpu_answer_standard_ru() -> str:
-    return (
-        "MPU-стандарт ответа (обязательные элементы):\n"
-        "1) Факты+таймлайн (когда/где/что именно произошло).\n"
-        "2) Личная ответственность без оправданий.\n"
-        "3) Понимание риска для безопасности на дороге.\n"
-        "4) Конкретные уже внедрённые изменения/барьеры.\n"
-        "5) Проверяемый план профилактики рецидива."
-    )
 
 
 def _mpu_high_bar_rules_ru() -> str:
