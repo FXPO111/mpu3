@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.services.ai_orchestrator import (
     _course_needs_rewrite,
+    _course_yes,
     _course_start_intent,
     _should_reuse_last_assistant_for_same_user_text,
 )
@@ -15,6 +16,13 @@ def test_course_start_intent_ru_accepts_start_commands():
     assert _course_start_intent("/start", "ru") is True
     assert _course_start_intent("поехали", "ru") is True
     assert _course_start_intent("да", "ru") is False
+
+
+def test_course_yes_ru_accepts_punctuation_and_short_variants():
+    assert _course_yes("Да!", "ru") is True
+    assert _course_yes("ок", "ru") is True
+    assert _course_yes("угу", "ru") is True
+    assert _course_yes("не готов", "ru") is False
 
 
 def test_course_default_rewrite_policy_does_not_require_timeline_for_every_question():
@@ -59,4 +67,3 @@ def test_dedup_allows_same_text_after_window_expires():
         last_assistant_created_at=last_assistant_at,
         now_utc=now,
     ) is False
-
