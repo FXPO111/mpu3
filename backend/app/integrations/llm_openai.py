@@ -434,6 +434,7 @@ def generate_free_question_reply(
     tone_ru = _tone_guidance_ru(q)
     standard_ru = _mpu_answer_standard_ru()
 
+
     if is_ru:
         system = (
             f"{tone_ru}\n\n"
@@ -644,6 +645,7 @@ def generate_assistant_reply(
     diag_ctx = _render_diagnostic_context(loc, diagnostic_summary, diagnostic_facts)
     tone_ru = _tone_guidance_ru(user_answer)
     standard_ru = _mpu_answer_standard_ru()
+
     course_ctx = _safe_json(course_context) if course_context else ""
 
     hist_block = ""
