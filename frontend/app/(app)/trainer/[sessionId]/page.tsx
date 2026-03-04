@@ -21,6 +21,13 @@ type Message = {
   created_at: string;
 };
 
+type SessionMeta = {
+  id: string;
+  mode: "practice" | "mock" | "diagnostic";
+  locale: "de" | "ru";
+  status: string;
+};
+
 async function jfetch<T>(
   url: string,
   init?: RequestInit,
@@ -56,6 +63,7 @@ export default function TrainerSessionPage({ params }: { params: { sessionId: st
   const [locale, setLocale] = useState<"de" | "en">("de");
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -131,6 +139,12 @@ export default function TrainerSessionPage({ params }: { params: { sessionId: st
     }
   }
 
+  async function loadSessionMeta(id: string) {
+    const r = await jfetch<{ data: SessionMeta }>(`/api/client/ai/sessions/${id}`, { method: "GET" });
+    if (!r.ok) return;
+    setSessionMeta((r.data as any).data ?? null);
+  }
+
   async function loadMessages(id: string) {
     setErr(null);
     const r = await jfetch<{ data: Message[] }>(`/api/client/ai/sessions/${id}/messages`, { method: "GET" });
@@ -141,10 +155,7 @@ export default function TrainerSessionPage({ params }: { params: { sessionId: st
     setMessages((r.data as any).data ?? []);
   }
 
-  async function send() {
-    const content = input.trim();
-    if (!content) return;
-
+  async function sendContent(content: string, opts?: { clearInput?: boolean }) {
     setErr(null);
     setBusy(true);
     try {
@@ -156,14 +167,32 @@ export default function TrainerSessionPage({ params }: { params: { sessionId: st
 
       if (!r.ok) {
         setErr(r.errorText ?? "Send failed");
-        return;
+        return false;
       }
 
-      setInput("");
+      if (opts?.clearInput) setInput("");
       await loadMessages(sessionId);
+      return true;
     } finally {
       setBusy(false);
     }
+  }
+
+  async function send() {
+    const content = input.trim();
+    if (!content) return;
+    await sendContent(content, { clearInput: true });
+  }
+
+  async function startTraining() {
+    const modeNow = sessionMeta?.mode ?? mode;
+    if (!(modeNow === "practice" || modeNow === "mock")) return;
+    const boot = modeNow === "mock" ? "[[START_MOCK]]" : "[[START_PRACTICE]]";
+    await sendContent(boot);
+  }
+
+  async function quickYes() {
+    await sendContent("да");
   }
 
   useEffect(() => {
@@ -172,9 +201,21 @@ export default function TrainerSessionPage({ params }: { params: { sessionId: st
 
   useEffect(() => {
     if (me && sessionId && sessionId !== "new") {
-      loadMessages(sessionId);
+      (async () => {
+        await loadSessionMeta(sessionId);
+        await loadMessages(sessionId);
+      })();
     }
   }, [me, sessionId]);
+
+  useEffect(() => {
+    if (!me || sessionId === "new") return;
+    if (!sessionMeta) return;
+    if (!(sessionMeta.mode === "practice" || sessionMeta.mode === "mock")) return;
+    if (messages.length > 0) return;
+    startTraining();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, sessionId, sessionMeta, messages.length]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -252,7 +293,7 @@ export default function TrainerSessionPage({ params }: { params: { sessionId: st
             </div>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                 <Input
                   placeholder="Напиши ответ…"
                   value={input}
@@ -266,6 +307,12 @@ export default function TrainerSessionPage({ params }: { params: { sessionId: st
                 />
                 <Button onClick={send} disabled={busy}>
                   Отправить
+                </Button>
+                <Button onClick={startTraining} disabled={busy}>
+                  Начать обучение
+                </Button>
+                <Button onClick={quickYes} disabled={busy}>
+                  Да
                 </Button>
               </div>
 
